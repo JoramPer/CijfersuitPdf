@@ -19,45 +19,51 @@ periodes = st.sidebar.multiselect(
 
 uploaded_file = st.file_uploader("Kies een PDF bestand", type="pdf")
 
-def parse_pdf(file):
+def parse_pdf_geavanceerd(file, geselecteerde_periodes):
     all_data = []
-    # De kolomkoppen gebaseerd op de brondocument structuur
-    columns = ["Naam", "Periode", "netl", "dutl", "entl", "ges", "ak", "wisAB", "wisAC", "maat", "biol", "nat", "schk", "econ", "ckv", "onv", "tek", "gem"]
+    # Definieer alle mogelijke kolommen
+    vakken_master = ["netl", "dutl", "entl", "ges", "ak", "wisAB", "wisAC", "maat", "biol", "nat", "schk", "econ", "c&kv"]
     
     with pdfplumber.open(file) as pdf:
-        current_student = ""
         for page in pdf.pages:
-            text = page.extract_text()
-            if not text: continue
+            # We halen de woorden op inclusief hun x-positie (horizontaal)
+            words = page.extract_words()
             
-            lines = text.split('\n')
+            # 1. Zoek de koppen op deze specifieke pagina om de x-coördinaten te bepalen
+            header_positions = {}
+            for v in vakken_master:
+                match = next((w for w in words if v in w['text'].lower()), None)
+                if match:
+                    header_positions[v] = (match['x0'], match['x1'])
+
+            # 2. Verwerk de regels
+            lines = page.extract_text().split('\n')
+            current_student = ""
+            
             for line in lines:
-                # 1. Zoek naar leerlingnamen (staan vaak bovenaan een blok)
-                if "Klas:" in line or "Vergaderlijst" in line or "Pagina" in line:
-                    continue
-                
-                # Check of regel een naam is (geen cijfers, begint met hoofdletter)
+                # Naam herkenning
                 if re.match(r'^[A-Z][a-z]+(\s[A-Z][a-z]+)+$', line.strip()):
                     current_student = line.strip()
+                    continue
                 
-                # 2. Zoek naar perioderegels (bijv "1 r" of "4 R")
+                # Periode check
                 p_match = re.search(r'(\d)\s+[rR]', line)
-                if p_match:
-                    p_num = p_match.group(1)
-                    if p_num in periodes:
-                        # Haal alle getallen uit de regel (cijfers)
-                        grades = re.findall(r'\d+,\d+|\d+', line)
-                        # Verwijder de periode-indicator uit de gevonden getallen
-                        if grades and grades[0] == p_num:
-                            grades.pop(0)
-                        
-                        # Voeg toe aan lijst (hier zou nog kolom-specifieke logica komen)
-                        row = [current_student, f"Periode {p_num}"] + grades
-                        # Opvullen met 'Leeg' als er minder cijfers zijn dan kolommen
-                        row += [""] * (len(columns) - len(row))
-                        all_data.append(row[:len(columns)])
-
-    return pd.DataFrame(all_data, columns=columns)
+                if p_match and p_match.group(1) in geselecteerde_periodes:
+                    # Hier gebeurt de magie: we pakken de getallen van deze specifieke regel
+                    # en kijken naar hun positie op de pagina t.o.v. de headers
+                    line_words = [w for w in words if w['top'] > (p_match_y_coord - 5) and w['top'] < (p_match_y_coord + 5)]
+                    
+                    row = {"Naam": current_student, "Periode": p_match.group(1)}
+                    for v in vakken_master:
+                        # Zoek een getal dat horizontaal ongeveer onder de header staat
+                        if v in header_positions:
+                            h_x0, h_x1 = header_positions[v]
+                            cijfer = next((w['text'] for w in line_words if abs(w['x0'] - h_x0) < 10), "")
+                            row[v] = cijfer
+                    
+                    all_data.append(row)
+    
+    return pd.DataFrame(all_data)
 
 if uploaded_file:
     with st.spinner('Bezig met verwerken...'):
