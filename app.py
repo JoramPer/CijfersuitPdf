@@ -19,7 +19,7 @@ periodes = st.sidebar.multiselect(
 
 uploaded_file = st.file_uploader("Kies een PDF bestand", type="pdf")
 
-def parse_pdf_geavanceerd(file, geselecteerde_periodes):
+def parse_pdf(file, geselecteerde_periodes):
     all_data = []
     # Definieer alle mogelijke kolommen
     vakken_master = ["netl", "dutl", "entl", "ges", "ak", "wisAB", "wisAC", "maat", "biol", "nat", "schk", "econ", "c&kv"]
